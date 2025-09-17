@@ -1,0 +1,353 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Document Q&A Bot</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link
+      href="https://cdn.jsdelivr.net/npm/daisyui@4.12.10/dist/full.min.css"
+      rel="stylesheet"
+      type="text/css"
+    />
+    <style>
+      :root {
+        --app-gradient: linear-gradient(90deg, #6d28d9 0%, #10b981 100%);
+      }
+      .msg {
+        max-width: 80%;
+      }
+      .bubble-user {
+        background: rgba(109, 40, 217, 0.16);
+      }
+      .bubble-bot {
+        background: rgba(16, 185, 129, 0.16);
+      }
+      .app-title-gradient {
+        background: var(--app-gradient);
+        background-clip: text;
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+      }
+      /* Mobile responsive tweaks */
+      @media (max-width: 640px) {
+        .msg {
+          max-width: 92%;
+        }
+      }
+      /* Make composer sticky on mobile */
+      .composer {
+        position: sticky;
+        bottom: env(safe-area-inset-bottom);
+        z-index: 10;
+        backdrop-filter: saturate(150%) blur(6px);
+      }
+      .safe-p {
+        padding-bottom: calc(0.5rem + env(safe-area-inset-bottom));
+      }
+      /* Full-height card body for chat */
+      .chat-card {
+        height: calc(100vh - 190px);
+      }
+      @media (min-width: 1024px) {
+        .chat-card {
+          height: 70vh;
+        }
+      }
+    </style>
+  </head>
+  <body class="bg-base-200 text-base-content">
+    <div class="min-h-screen container mx-auto p-4 safe-p">
+      <div class="flex items-center justify-between mb-3">
+        <h1 class="text-2xl font-extrabold app-title-gradient">
+          Document Q&A Bot
+        </h1>
+        <div class="flex items-center gap-2"></div>
+      </div>
+
+      <div class="grid grid-cols-12 gap-4">
+        <div class="col-span-12 lg:col-span-4 order-2 lg:order-1">
+          <div class="card bg-base-100 shadow-sm">
+            <div class="card-body">
+              <h2 class="card-title">Conversations</h2>
+              <div class="flex gap-2 mb-4">
+                <button class="btn btn-primary btn-sm flex-1" id="newChatBtn">
+                  New Chat
+                </button>
+              </div>
+              <select
+                class="select select-bordered w-full mb-4"
+                id="chatSelect"
+                title="Previous Conversations"
+              ></select>
+
+              <div class="divider"></div>
+              <h3 class="font-semibold mb-2">Quick Prompts</h3>
+              <div class="flex flex-wrap gap-2">
+                <button class="btn btn-sm" data-q="Summarize the main document">
+                  Summarize
+                </button>
+                <button
+                  class="btn btn-sm"
+                  data-q="What are the key topics covered in the documents?"
+                >
+                  Key Topics
+                </button>
+                <button
+                  class="btn btn-sm"
+                  data-q="List important warnings or contraindications"
+                >
+                  Safety Info
+                </button>
+                <button
+                  class="btn btn-sm"
+                  data-q="What are the dosage recommendations?"
+                >
+                  Dosage Info
+                </button>
+                <button
+                  class="btn btn-sm"
+                  data-q="Explain the mechanism of action"
+                >
+                  How it Works
+                </button>
+                <button
+                  class="btn btn-sm"
+                  data-q="What are the side effects mentioned?"
+                >
+                  Side Effects
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="col-span-12 lg:col-span-8 order-1 lg:order-2">
+          <div class="card bg-base-100 shadow-sm chat-card">
+            <div id="chat" class="card-body overflow-y-auto space-y-2"></div>
+          </div>
+          <form
+            id="composer"
+            class="composer mt-3 flex gap-2 bg-base-200/60 p-2 rounded-xl"
+          >
+            <input
+              id="message"
+              class="input input-bordered flex-1"
+              placeholder="Ask a question about your documents..."
+              autocomplete="off"
+            />
+            <button class="btn btn-primary" type="submit">Send</button>
+          </form>
+        </div>
+      </div>
+    </div>
+
+    <script>
+      const chat = document.getElementById("chat");
+      const form = document.getElementById("composer");
+      const input = document.getElementById("message");
+      const newChatBtn = document.getElementById("newChatBtn");
+      const chatSelect = document.getElementById("chatSelect");
+
+      // Set dark theme permanently
+      document.documentElement.setAttribute("data-theme", "dark");
+
+      // Quick prompts
+      document.querySelectorAll("[data-q]").forEach((btn) => {
+        btn.addEventListener("click", () => {
+          input.value = btn.getAttribute("data-q");
+          input.focus();
+        });
+      });
+
+      // Session storage for multiple conversations
+      const STORAGE_KEY = "docchat.sessions";
+      let sessions = JSON.parse(localStorage.getItem(STORAGE_KEY) || "{}");
+      let currentId = localStorage.getItem("docchat.currentId") || null;
+
+      function makeId() {
+        return Math.random().toString(36).slice(2, 10);
+      }
+
+      function ensureSession(id) {
+        if (!sessions[id])
+          sessions[id] = { id, title: "New chat", history: [] };
+      }
+
+      function setCurrent(id) {
+        currentId = id;
+        localStorage.setItem("docchat.currentId", id);
+        refreshSelect();
+        renderHistory();
+      }
+
+      function refreshSelect() {
+        chatSelect.innerHTML = "";
+        Object.values(sessions).forEach((s) => {
+          const opt = document.createElement("option");
+          opt.value = s.id;
+          opt.textContent = s.title || s.id;
+          if (s.id === currentId) opt.selected = true;
+          chatSelect.appendChild(opt);
+        });
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(sessions));
+      }
+
+      function resetIfEmptyTitle(session, fallbackText) {
+        if (!session.title || session.title === "New chat") {
+          session.title = (fallbackText || "New chat").slice(0, 60);
+        }
+      }
+
+      function addMessage(role, content) {
+        const s = sessions[currentId];
+        s.history.push({ role, content });
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(sessions));
+      }
+
+      function renderHistory() {
+        chat.innerHTML = "";
+        const s = sessions[currentId];
+        (s.history || []).forEach((m) => {
+          const wrap = document.createElement("div");
+          wrap.className = "w-full flex";
+          if (m.role === "user") {
+            wrap.innerHTML = `<div class='chat chat-end w-full'><div class='chat-bubble bubble-user msg whitespace-pre-wrap'>${m.content}</div></div>`;
+          } else {
+            wrap.innerHTML = `<div class='chat chat-start w-full'><div class='chat-bubble bubble-bot msg whitespace-pre-wrap'>${m.content}</div></div>`;
+          }
+          chat.appendChild(wrap);
+        });
+        chat.scrollTop = chat.scrollHeight;
+      }
+
+      if (!currentId) {
+        const id = makeId();
+        ensureSession(id);
+        currentId = id;
+        localStorage.setItem("docchat.currentId", id);
+      } else {
+        ensureSession(currentId);
+      }
+      refreshSelect();
+      renderHistory();
+
+      newChatBtn.addEventListener("click", () => {
+        const id = makeId();
+        ensureSession(id);
+        setCurrent(id);
+      });
+      chatSelect.addEventListener("change", () => setCurrent(chatSelect.value));
+
+      let ws;
+      function connect() {
+        const scheme = location.protocol === "https:" ? "wss" : "ws";
+        let wsUrl;
+
+        // Check if we're running on localhost (local development)
+        if (
+          location.hostname === "localhost" ||
+          location.hostname === "127.0.0.1"
+        ) {
+          wsUrl = `${scheme}://${location.hostname}:8765/`;
+        } else {
+          // For Cloudflare tunnels, check if WebSocket URL is set in URL parameters
+          const urlParams = new URLSearchParams(window.location.search);
+          const wsParam = urlParams.get("ws");
+
+          if (wsParam) {
+            // Use provided WebSocket URL parameter
+            wsUrl = wsParam.startsWith("http")
+              ? wsParam.replace("http", "ws")
+              : wsParam;
+          } else {
+            // MANUALLY SET YOUR WEBSOCKET TUNNEL URL HERE
+            // Replace 'YOUR_WS_TUNNEL_URL' with your actual WebSocket tunnel URL
+            // Example: wsUrl = 'wss://xyz789.trycloudflare.com';
+            wsUrl = "YOUR_WS_TUNNEL_URL"; // <-- Replace this
+          }
+        }
+
+        console.log("Attempting WebSocket connection to:", wsUrl);
+        ws = new WebSocket(wsUrl);
+        ws.onopen = () => {
+          console.log("WebSocket connected successfully");
+        };
+        ws.onclose = () => {
+          console.log("WebSocket disconnected, attempting reconnection...");
+          setTimeout(connect, 1000);
+        };
+        ws.onerror = (error) => {
+          console.error("WebSocket error:", error);
+        };
+        ws.onmessage = (ev) => {
+          const msg = JSON.parse(ev.data);
+          if (msg.type === "start") {
+            // render skeleton bubble for assistant
+            const wrap = document.createElement("div");
+            wrap.className = "w-full flex";
+            wrap.innerHTML = `<div class='chat chat-start w-full'>
+              <div class='chat-bubble bubble-bot msg whitespace-pre-wrap' id='bot-bubble'></div>
+            </div>`;
+            chat.appendChild(wrap);
+            chat.scrollTop = chat.scrollHeight;
+          } else if (msg.type === "stream") {
+            const node = document.getElementById("bot-bubble");
+            if (node) {
+              node.textContent += msg.delta;
+              chat.scrollTop = chat.scrollHeight;
+            }
+          } else if (msg.type === "done") {
+            const node = document.getElementById("bot-bubble");
+            if (node) node.removeAttribute("id");
+            // Save bot message to session history
+            const content = node ? node.textContent : "";
+            addMessage("assistant", content);
+            // If this is the first assistant message, use it to title the session
+            const s = sessions[currentId];
+            if (
+              (s.history || []).filter((m) => m.role === "assistant").length ===
+              1
+            ) {
+              resetIfEmptyTitle(s, content);
+              refreshSelect();
+            }
+          }
+        };
+      }
+      connect();
+
+      function renderUser(text) {
+        const wrap = document.createElement("div");
+        wrap.className = "w-full flex";
+        wrap.innerHTML = `<div class='chat chat-end w-full'>
+          <div class='chat-bubble bubble-user msg whitespace-pre-wrap'>${text}</div>
+        </div>`;
+        chat.appendChild(wrap);
+        chat.scrollTop = chat.scrollHeight;
+      }
+
+      form.addEventListener("submit", (e) => {
+        e.preventDefault();
+        const text = input.value.trim();
+        if (!text || !ws || ws.readyState !== WebSocket.OPEN) return;
+        renderUser(text);
+        addMessage("user", text);
+        const history = sessions[currentId].history.filter(
+          (m) => m.role && m.content
+        );
+        ws.send(
+          JSON.stringify({
+            type: "user_message",
+            message: text,
+            system_prompt:
+              "You are a helpful assistant that answers questions based on the indexed documents. Provide accurate, detailed responses using only the information available in the documents.",
+            history,
+          })
+        );
+        input.value = "";
+        input.focus();
+      });
+    </script>
+  </body>
+</html>
