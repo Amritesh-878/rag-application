@@ -1,6 +1,6 @@
 # RAG Application
 
-A Retrieval Augmented Generation (RAG) chatbot that allows you to ingest documents (PDF, DOCX, TXT, MD) and ask questions about their content. Answers are generated using a Large Language Model (Groq API) and include source citations from your documents.
+A Retrieval Augmented Generation (RAG) chatbot that enables ingestion of documents (PDF, DOCX, TXT, MD) and ask questions about their content. Answers are generated using a Large Language Model (Groq API) and include source citations from your documents.
 
 ## Features
 
@@ -42,7 +42,7 @@ A Retrieval Augmented Generation (RAG) chatbot that allows you to ingest documen
 
 ## Usage
 
-- Ask questions about your documents via the web interface.
+- Ask questions about any documents via the web interface.
 - Answers include relevant document sources.
 - For command-line testing, run:
   ```bash
